@@ -1,0 +1,14 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const script=fs.readFileSync(path.join(__dirname,'../release-info.js'),'utf8');
+async function simulate(language,{failed=false,future=false,request=''}={}){
+ const version={textContent:''},links=[{href:'',textContent:''}],platforms=['windows','linux','macos'].map(p=>({dataset:{releasePlatform:p},href:'',label:{textContent:''},querySelector(){return this.label;}})),pending={dataset:{pendingRelease:'v0.0.1-alpha.8'},hidden:false};let redirect;
+ const releases=[{tag_name:future?'v0.0.1-alpha.8':'v0.0.1-alpha.7',published_at:'2026-10-24T12:00:00Z',draft:false,assets:[{name:'ChroMinimum-setup-x64.exe',browser_download_url:'https://example.test/windows.exe'}]},{tag_name:'v0.0.1-alpha.2',published_at:'2026-10-19T12:00:00Z',draft:false,assets:[{name:'CM-linux-x64.tar.gz',browser_download_url:'https://example.test/linux.tar.gz'},{name:'CM-macos-arm64.tar.gz',browser_download_url:'https://example.test/macos.tar.gz'}]}];
+ const context={document:{documentElement:{lang:language},getElementById(){return version;},querySelectorAll(selector){return selector.includes('data-release-download')?links:selector==='[data-release-platform]'?platforms:[pending];}},window:{location:{search:request?'?download='+request:'',replace(url){redirect=url;}}},URLSearchParams,fetch:async()=>{if(failed)throw Error('offline');return {ok:true,json:async()=>releases};}};
+ vm.runInNewContext(script,context);await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));return {version,links,platforms,pending,redirect};
+}
+for(const language of ['ru','en']){
+ test(language+': correct platform versions and installer labels',async()=>{const r=await simulate(language);assert.equal(r.links[0].href,'https://example.test/windows.exe');assert.match(r.links[0].textContent,language==='en'?/Download installer/:/Скачать установщик/);assert.match(r.platforms[1].label.textContent,/alpha.2/);assert.equal(r.pending.hidden,false);});
+ test(language+': future published candidate hides preparation section',async()=>{assert.equal((await simulate(language,{future:true})).pending.hidden,true);});
+ test(language+': failure uses translated safe release-page fallback',async()=>{const r=await simulate(language,{failed:true,request:'windows'});assert.match(r.version.textContent,language==='en'?/Latest version/:/Актуальная версия/);assert.match(r.links[0].textContent,language==='en'?/View all releases/:/Открыть все релизы/);assert.equal(r.redirect,'https://github.com/SargeMadovsky/ChroMinimum/releases');});
+ test(language+': download redirect selects requested platform',async()=>{assert.equal((await simulate(language,{request:'linux'})).redirect,'https://example.test/linux.tar.gz');});
+}

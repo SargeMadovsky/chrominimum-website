@@ -1,4 +1,14 @@
 (() => {
+  const english = document.documentElement.lang.toLowerCase().startsWith("en");
+  const labels = english ? {
+    versionFallback: "Latest version on GitHub", allReleases: "View all releases ↗",
+    files: "Versions and files on GitHub ↗", prototype: "early prototype",
+    installer: "Download installer", download: "Download", notPublished: "Files not published yet",
+  } : {
+    versionFallback: "Актуальная версия — на GitHub", allReleases: "Открыть все релизы ↗",
+    files: "Версии и файлы на GitHub ↗", prototype: "ранний прототип",
+    installer: "Скачать установщик", download: "Скачать", notPublished: "Файлы пока не опубликованы",
+  };
   const repository = "SargeMadovsky/ChroMinimum";
   const releasesPage = `https://github.com/${repository}/releases`;
   const version = document.getElementById("release-version");
@@ -15,15 +25,15 @@
     .find(Boolean);
 
   const fallbackToReleases = () => {
-    version.textContent = "Актуальная версия — на GitHub";
+    version.textContent = labels.versionFallback;
     links.forEach(link => {
       link.href = releasesPage;
-      link.textContent = "Открыть все релизы ↗";
+      link.textContent = labels.allReleases;
     });
     platformLinks.forEach(link => {
       link.href = releasesPage;
       const label = link.querySelector("small");
-      if (label) label.textContent = "Версии и файлы на GitHub ↗";
+      if (label) label.textContent = labels.files;
     });
     if (Object.hasOwn(platformFiles, requestedDownload)) window.location.replace(releasesPage);
   };
@@ -47,11 +57,11 @@
       const windows = downloads.windows;
       if (!windows) throw new Error("No published Windows build found");
       const tag = windows.release.tag_name;
-      version.textContent = `${tag} · ранний прототип`;
+      version.textContent = `${tag} · ${labels.prototype}`;
       links.forEach(link => {
         link.href = windows.asset.browser_download_url;
         link.textContent = /-setup-x64\.exe$/i.test(windows.asset.name)
-          ? `Скачать установщик ${tag} ↗` : `Скачать ${tag} ↗`;
+          ? `${labels.installer} ${tag} ↗` : `${labels.download} ${tag} ↗`;
       });
       platformLinks.forEach(link => {
         const download = downloads[link.dataset.releasePlatform];
@@ -59,7 +69,7 @@
         const label = link.querySelector("small");
         if (label) label.textContent = download
           ? `${link.dataset.releasePlatform === "macos" ? "Apple Silicon" : "x64"} · ${download.release.tag_name}`
-          : "Файлы пока не опубликованы";
+          : labels.notPublished;
       });
       document.querySelectorAll("[data-pending-release]").forEach(section => {
         if (published.some(release => release.tag_name === section.dataset.pendingRelease)) section.hidden = true;
