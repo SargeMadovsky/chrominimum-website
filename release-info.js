@@ -9,12 +9,10 @@
     linux: [/-linux-x64\.tar\.gz$/i],
     macos: [/-macos-arm64\.tar\.gz$/i],
   };
-
-  const findAsset = (release, platform) => {
-    const patterns = platformFiles[platform] || [];
-    return patterns.map(pattern => release.assets.find(asset => pattern.test(asset.name)))
-      .find(Boolean);
-  };
+  const requestedDownload = new URLSearchParams(window.location.search).get("download");
+  const findAsset = (release, platform) => (platformFiles[platform] || [])
+    .map(pattern => release.assets.find(asset => pattern.test(asset.name)))
+    .find(Boolean);
 
   const fallbackToReleases = () => {
     version.textContent = "Актуальная версия — на GitHub";
@@ -22,13 +20,15 @@
       link.href = releasesPage;
       link.textContent = "Открыть все релизы ↗";
     });
-    platformLinks.forEach(link => { link.href = releasesPage; });
-    if (["windows", "linux", "macos"].includes(new URLSearchParams(window.location.search).get("download"))) {
-      window.location.replace(releasesPage);
-    }
+    platformLinks.forEach(link => {
+      link.href = releasesPage;
+      const label = link.querySelector("small");
+      if (label) label.textContent = "Версии и файлы на GitHub ↗";
+    });
+    if (Object.hasOwn(platformFiles, requestedDownload)) window.location.replace(releasesPage);
   };
 
-  fetch(`https://api.github.com/repos/${repository}/releases?per_page=1`, {
+  fetch(`https://api.github.com/repos/${repository}/releases?per_page=100`, {
     headers: { Accept: "application/vnd.github+json" },
   })
     .then(response => {
@@ -36,32 +36,36 @@
       return response.json();
     })
     .then(releases => {
-      const release = Array.isArray(releases) && releases.find(item => !item.draft);
-      if (!release || !release.tag_name) throw new Error("No published release found");
-
-      const tag = release.tag_name;
-      const installer = release.assets.find(asset => /-setup-x64\.exe$/i.test(asset.name));
+      if (!Array.isArray(releases)) throw new Error("Invalid releases response");
+      const published = releases
+        .filter(release => !release.draft && /^v\d+\.\d+\.\d+(?:-|$)/.test(release.tag_name))
+        .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
+      const downloads = Object.fromEntries(Object.keys(platformFiles).map(platform => {
+        const release = published.find(item => findAsset(item, platform));
+        return [platform, release ? { release, asset: findAsset(release, platform) } : null];
+      }));
+      const windows = downloads.windows;
+      if (!windows) throw new Error("No published Windows build found");
+      const tag = windows.release.tag_name;
       version.textContent = `${tag} · ранний прототип`;
-
       links.forEach(link => {
-        link.href = (installer || findAsset(release, "windows"))?.browser_download_url || release.html_url;
-        link.textContent = installer ? `Скачать установщик ${tag} ↗` : `Скачать ${tag} ↗`;
+        link.href = windows.asset.browser_download_url;
+        link.textContent = /-setup-x64\.exe$/i.test(windows.asset.name)
+          ? `Скачать установщик ${tag} ↗` : `Скачать ${tag} ↗`;
       });
-
       platformLinks.forEach(link => {
-        const platform = link.dataset.releasePlatform;
-        const asset = findAsset(release, platform);
-        link.href = asset?.browser_download_url || release.html_url;
+        const download = downloads[link.dataset.releasePlatform];
+        link.href = download?.asset.browser_download_url || releasesPage;
         const label = link.querySelector("small");
-        if (label) label.textContent = asset ? `${label.textContent.split(" · ")[0]} · ${tag}` : `${tag} · файлы релиза`;
+        if (label) label.textContent = download
+          ? `${link.dataset.releasePlatform === "macos" ? "Apple Silicon" : "x64"} · ${download.release.tag_name}`
+          : "Файлы пока не опубликованы";
       });
-
-      const requestedDownload = new URLSearchParams(window.location.search).get("download");
-      if (["windows", "linux", "macos"].includes(requestedDownload)) {
-        const asset = requestedDownload === "windows"
-          ? (installer || findAsset(release, "windows"))
-          : findAsset(release, requestedDownload);
-        window.location.replace(asset?.browser_download_url || release.html_url);
+      document.querySelectorAll("[data-pending-release]").forEach(section => {
+        if (published.some(release => release.tag_name === section.dataset.pendingRelease)) section.hidden = true;
+      });
+      if (Object.hasOwn(platformFiles, requestedDownload)) {
+        window.location.replace(downloads[requestedDownload]?.asset.browser_download_url || releasesPage);
       }
     })
     .catch(fallbackToReleases);
